@@ -38,18 +38,20 @@ needs a human saying yes first. Member IDs are redacted from the logs.
 
 ```mermaid
 flowchart LR
-    U[You] --> A[Strands agent\nLiteLLM / scripted model]
+    U[You] --> A[Strands agent\nLiteLLM openai/gpt-4o-mini]
     A -->|stdio| M[MCP server\n4 deterministic tools]
     M --> L[logic.py\ncoverage + cost math]
     M --> D[(mock payer data\nmembers.json, claims.json)]
     A -->|explains| U
 ```
 
-The agent is a single Strands agent. The tools live in a separate MCP
-server process (`agent_eligibility_claims.mcp_server`), which the agent
-connects to over stdio when it starts up. The model never touches the
-payer data directly — it can only call the tools, and the tools do the
-deciding.
+The agent is a single Strands agent running against a real model —
+LiteLLM with `openai/gpt-4o-mini` — by default. The tools live in a
+separate MCP server process (`agent_eligibility_claims.mcp_server`),
+which the agent connects to over stdio when it starts up. The model
+never touches the payer data directly — it can only call the tools, and
+the tools do the deciding. The scripted model is only for the tests and
+the offline demo (`make demo-mock`); the real path never falls back to it.
 
 When the agent starts, it prints the tools it loaded, so you can see
 exactly what it is allowed to call before it takes any request:
@@ -67,11 +69,21 @@ Loaded 4 tools from the MCP server:
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
-make demo        # or: .venv/bin/python -m agent_eligibility_claims.demo
+cp .env.example .env   # then put your OpenAI key in .env
+make demo              # real agent, LiteLLM openai/gpt-4o-mini
 ```
 
-That's it — the demo runs on a scripted model, so it needs no API key and
-no network. It walks through six scenarios against the mock data:
+The demo runs against real OpenAI by default — a real model doing real
+tool calls against the MCP server. It needs `OPENAI_API_KEY`, either in
+your environment or in a `.env` file in the repo root. No key, no silent
+fallback: the demo stops with a clear message telling you to set one.
+Never commit a real key: `.env` is gitignored, and `.env.example` is the
+only key-shaped file in the repo.
+
+It walks through six scenarios against the mock data. The model words
+things its own way, so your output won't match this word for word — but
+the tool calls and the verdicts are deterministic, so the answers are
+the same:
 
 ```
 ### 1. Eligibility check that passes
@@ -145,21 +157,21 @@ submitted claims (and their idempotency keys) only live as long as the
 server process does. Restart it and the ledger resets to the four seed
 claims.
 
-## Running it live
+## Running it offline (mock)
 
-The demo and the tests run on a scripted model by default — deterministic,
-free, offline. To run against a real model instead:
+The tests and the offline demo use a scripted model — deterministic,
+free, no network — so they never need a key:
 
 ```bash
-cp .env.example .env   # then put your key in .env
-export OPENAI_API_KEY=sk-...
-make demo-live         # or: python -m agent_eligibility_claims.demo --live
+make demo-mock   # or: python -m agent_eligibility_claims.demo --mock
+make test        # the full suite runs offline
 ```
 
-That swaps in LiteLLM with `openai/gpt-4o-mini`. The tools, the guardrails,
-and the scenarios are identical — only the model changes. Never commit a
-real key: `.env` is gitignored, and `.env.example` is the only key-shaped
-file in the repo.
+The scripted model is a stand-in, not the agent: it reads the request,
+makes the one tool call the request needs, and summarizes the tool
+result. It exists so the orchestration (which tool, in what order, what
+happens on a repeat submit) is testable without spending anything. The
+real agent — the thing `make demo` runs — is always OpenAI.
 
 ## Running the tests
 
@@ -167,7 +179,7 @@ file in the repo.
 make test   # or: .venv/bin/python -m pytest -v
 ```
 
-25 tests, no key needed:
+32 tests, no key needed (33 collected; the live one skips without a key):
 
 - `tests/test_logic.py` — the deterministic logic directly: eligibility
   verdicts, claim statuses, the cost math, idempotency, the confirmation
@@ -178,6 +190,11 @@ make test   # or: .venv/bin/python -m pytest -v
 - `tests/test_orchestration.py` — the full agent with the scripted model:
   the five demo scenarios end to end, including submitting the same claim
   twice.
+- `tests/test_agent_factory.py` — the default agent demands a key and
+  fails clearly without one; `.env` loading; the scripted model needs
+  no key.
+- `tests/test_demo_cli.py` — `demo` without a key fails with a clear
+  message; `demo --mock` runs the whole demo offline.
 - `tests/test_live.py` — one smoke test against OpenAI. It only runs when
   `OPENAI_API_KEY` is set and skips otherwise.
 
@@ -203,4 +220,4 @@ people's coverage, and a confident wrong answer is worse than no answer.
 The pattern here — model talks, code decides, every money-moving action
 needs a human yes and an idempotency key — is the one I'd want in front
 of a real payer system. This repo is the mock-data version of that
-pattern, runnable in one command.
+pattern, runnable in one command against a real model.

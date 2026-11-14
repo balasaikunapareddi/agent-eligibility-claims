@@ -5,6 +5,13 @@ out which tool to call, and explains what the tool returned. Every decision
 — eligible or not, what a claim costs, whether a claim exists — is made by
 the deterministic tools on the MCP server.
 
+By default the agent runs against a real model (LiteLLM with
+``openai/gpt-4o-mini``) and needs OPENAI_API_KEY — from the environment or
+a ``.env`` file in the working directory. The scripted mock model exists
+only for the tests and the explicit offline demo (``--mock``); the real
+path never silently falls back to it. If the key is missing, agent
+construction fails with a clear message instead of pretending.
+
 Startup always prints the tools the agent loaded from the MCP server, so
 you can see exactly what it is allowed to call before it takes any request.
 """
@@ -17,6 +24,7 @@ import re
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any
 
 from mcp import StdioServerParameters, stdio_client
@@ -75,6 +83,47 @@ class _RedactPIIFilter(logging.Filter):
         return True
 
 
+def load_dotenv(env_path: Path | None = None) -> None:
+    """Load KEY=VALUE pairs from a .env file into the environment.
+
+    Only sets keys that are not already set — the real environment always
+    wins. Looks at ``.env`` in the working directory unless a path is
+    given. No dependency, no surprises: lines starting with ``#`` and blank
+    lines are skipped, and surrounding quotes are stripped.
+    """
+    path = env_path or Path.cwd() / ".env"
+    if not path.is_file():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip("'\"")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+def require_openai_key() -> str:
+    """Return OPENAI_API_KEY, or fail loudly if it is missing.
+
+    The real agent path never falls back to the mock model — if there is
+    no key, this raises with instructions instead of silently pretending
+    to be a live agent.
+    """
+    load_dotenv()
+    key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if not key:
+        raise RuntimeError(
+            "OPENAI_API_KEY is not set. The agent runs against real OpenAI "
+            "by default — set the key in your environment, or copy "
+            ".env.example to .env and put the key there (never commit .env). "
+            "For the offline demo only, run with --mock."
+        )
+    return key
+
+
 def create_mcp_client() -> MCPClient:
     """Build the MCP client that spawns the eligibility-claims server."""
 
@@ -113,13 +162,23 @@ def eligibility_agent(
 ) -> Iterator[Agent]:
     """Start the MCP server, load its tools, and yield a ready agent.
 
+    With no ``model`` given, the agent runs against real OpenAI
+    (LiteLLM ``openai/gpt-4o-mini``) and requires OPENAI_API_KEY — see
+    :func:`require_openai_key`. Pass a model explicitly only for the
+    scripted model in tests and the offline demo; the real path never
+    silently falls back to mock.
+
     The MCP client is owned by the Strands Agent: constructing the agent
     starts the server subprocess (via the client's load_tools hook), so the
     tool list is printed after the agent is built and before any request.
     """
     logging.getLogger("strands").addFilter(_RedactPIIFilter())
     client = create_mcp_client()
-    agent_model = model or LiteLLMModel(model_id="openai/gpt-4o-mini")
+    if model is None:
+        require_openai_key()
+        agent_model: Any = LiteLLMModel(model_id="openai/gpt-4o-mini")
+    else:
+        agent_model = model
     agent = Agent(
         model=agent_model,
         tools=[client],
@@ -134,7 +193,7 @@ def eligibility_agent(
 
 
 def build_scripted_agent() -> Any:
-    """Convenience helper for scripts: an agent on the scripted model."""
+    """Convenience helper for tests and the offline demo: agent on the mock model."""
     return eligibility_agent(model=ScriptedModel())
 
 
@@ -145,6 +204,8 @@ __all__ = [
     "create_mcp_client",
     "eligibility_agent",
     "list_loaded_tools",
+    "load_dotenv",
     "print_tool_list",
     "redact_pii",
+    "require_openai_key",
 ]

@@ -1,11 +1,14 @@
 """Demo: the eligibility + claims agent, end to end, in one command.
 
-By default it runs on the scripted model — no API key, no network, same
-output every time. Pass ``--live`` to run the same five scenarios against
-a real model through LiteLLM (needs OPENAI_API_KEY)::
+By default it runs against a real model — LiteLLM with
+``openai/gpt-4o-mini`` — and needs OPENAI_API_KEY (environment or a
+``.env`` file). Pass ``--mock`` for the offline demo on the scripted
+model, which needs no key and no network. There is no silent fallback:
+without a key the real path fails with a clear message telling you to
+set one.
 
-    python -m agent_eligibility_claims.demo
-    python -m agent_eligibility_claims.demo --live
+    python -m agent_eligibility_claims.demo            # real OpenAI
+    python -m agent_eligibility_claims.demo --mock     # offline, scripted
 """
 
 from __future__ import annotations
@@ -14,9 +17,7 @@ import argparse
 import json
 import sys
 
-from strands.models.litellm import LiteLLMModel
-
-from .agent import eligibility_agent
+from .agent import eligibility_agent, require_openai_key
 from .scripted_model import ScriptedModel
 
 SCENARIOS: list[tuple[str, str]] = [
@@ -78,18 +79,27 @@ def result_text(result: object) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Eligibility + claims agent demo")
     parser.add_argument(
+        "--mock",
+        action="store_true",
+        help="Run the offline demo on the scripted model (no key, no network).",
+    )
+    parser.add_argument(
         "--live",
         action="store_true",
-        help="Use LiteLLM/OpenAI (gpt-4o-mini) instead of the scripted model. Needs OPENAI_API_KEY.",
+        help="Accepted for compatibility — live OpenAI is now the default.",
     )
     args = parser.parse_args(argv)
 
-    if args.live:
-        model = LiteLLMModel(model_id="openai/gpt-4o-mini")
-        print("Running LIVE with LiteLLM (openai/gpt-4o-mini).")
-    else:
+    if args.mock:
         model = ScriptedModel()
         print("Running on the scripted model (offline, deterministic).")
+        print("Mock is for tests and offline use only — the real agent runs on OpenAI.")
+    else:
+        # Fails with a clear message when OPENAI_API_KEY is missing;
+        # never falls back to the mock model.
+        require_openai_key()
+        model = None
+        print("Running LIVE with LiteLLM (openai/gpt-4o-mini).")
 
     print("All data is synthetic mock data — no real patient information.\n")
 
