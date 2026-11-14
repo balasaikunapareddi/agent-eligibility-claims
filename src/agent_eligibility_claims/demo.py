@@ -2,13 +2,17 @@
 
 By default it runs against a real model — LiteLLM with
 ``openai/gpt-4o-mini`` — and needs OPENAI_API_KEY (environment or a
-``.env`` file). Pass ``--mock`` for the offline demo on the scripted
-model, which needs no key and no network. There is no silent fallback:
-without a key the real path fails with a clear message telling you to
-set one.
+``.env`` file). Pass ``--provider gemini`` (or ``--gemini``) to run the
+same demo free on the Gemini free tier — LiteLLM with
+``gemini/gemini-3.5-flash-lite`` — which needs GEMINI_API_KEY from
+Google AI Studio, no credit card. Pass ``--mock`` for the offline demo
+on the scripted model, which needs no key and no network. There is no
+silent fallback: without the right key the real path fails with a clear
+message telling you to set one.
 
-    python -m agent_eligibility_claims.demo            # real OpenAI
-    python -m agent_eligibility_claims.demo --mock     # offline, scripted
+    python -m agent_eligibility_claims.demo                    # real OpenAI
+    python -m agent_eligibility_claims.demo --provider gemini  # real Gemini, free
+    python -m agent_eligibility_claims.demo --mock             # offline, scripted
 """
 
 from __future__ import annotations
@@ -17,7 +21,7 @@ import argparse
 import json
 import sys
 
-from .agent import eligibility_agent, require_openai_key
+from .agent import PROVIDERS, eligibility_agent, require_provider_key
 from .scripted_model import ScriptedModel
 
 SCENARIOS: list[tuple[str, str]] = [
@@ -84,26 +88,43 @@ def main(argv: list[str] | None = None) -> int:
         help="Run the offline demo on the scripted model (no key, no network).",
     )
     parser.add_argument(
+        "--provider",
+        choices=sorted(PROVIDERS),
+        default="openai",
+        help="Which real model to run on: openai (default) or gemini (free tier).",
+    )
+    parser.add_argument(
+        "--gemini",
+        action="store_true",
+        help="Shorthand for --provider gemini (free tier, no card needed).",
+    )
+    parser.add_argument(
         "--live",
         action="store_true",
         help="Accepted for compatibility — live OpenAI is now the default.",
     )
     args = parser.parse_args(argv)
+    provider = "gemini" if args.gemini else args.provider
 
     if args.mock:
         model = ScriptedModel()
         print("Running on the scripted model (offline, deterministic).")
-        print("Mock is for tests and offline use only — the real agent runs on OpenAI.")
+        print("Mock is for tests and offline use only — the real agent runs on OpenAI or Gemini.")
     else:
-        # Fails with a clear message when OPENAI_API_KEY is missing;
-        # never falls back to the mock model.
-        require_openai_key()
+        # Fails with a clear message when the provider's key is missing;
+        # never falls back to the mock model or the other provider.
+        require_provider_key(provider)
         model = None
-        print("Running LIVE with LiteLLM (openai/gpt-4o-mini).")
+        if provider == "gemini":
+            print("Running LIVE with LiteLLM (gemini/gemini-3.5-flash-lite) — free tier.")
+        else:
+            print("Running LIVE with LiteLLM (openai/gpt-4o-mini).")
 
     print("All data is synthetic mock data — no real patient information.\n")
 
-    with eligibility_agent(model=model, callback_handler=_tool_call_callback) as agent:
+    with eligibility_agent(
+        model=model, provider=provider, callback_handler=_tool_call_callback
+    ) as agent:
         for title, prompt in SCENARIOS:
             print(f"\n### {title}")
             print(f"You: {prompt}")

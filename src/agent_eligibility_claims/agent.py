@@ -7,10 +7,13 @@ the deterministic tools on the MCP server.
 
 By default the agent runs against a real model (LiteLLM with
 ``openai/gpt-4o-mini``) and needs OPENAI_API_KEY — from the environment or
-a ``.env`` file in the working directory. The scripted mock model exists
-only for the tests and the explicit offline demo (``--mock``); the real
-path never silently falls back to it. If the key is missing, agent
-construction fails with a clear message instead of pretending.
+a ``.env`` file in the working directory. Pass ``provider="gemini"`` to
+run it on the Gemini free tier instead (LiteLLM
+``gemini/gemini-3.5-flash-lite``, needs GEMINI_API_KEY from Google AI
+Studio — no credit card). The scripted mock model exists only for the
+tests and the explicit offline demo (``--mock``); the real path never
+silently falls back to it. If the key is missing, agent construction
+fails with a clear message instead of pretending.
 
 Startup always prints the tools the agent loaded from the MCP server, so
 you can see exactly what it is allowed to call before it takes any request.
@@ -60,6 +63,33 @@ EXPECTED_TOOLS = [
     "submit_claim",
 ]
 
+# One entry per real-model provider. "model_id" is the LiteLLM model id;
+# "key_env" is the environment variable the key comes from. Gemini uses
+# gemini-3.5-flash-lite: it is on Google's free tier with the highest
+# daily quota of the Flash line (about 500 requests/day reported in AI
+# Studio, against about 20/day for plain Flash), and it is the model
+# gemini-2.5-flash routes to after that ID stops serving new users on
+# 2026-12-01. Model names rotate — check Google's pricing page before
+# changing this.
+PROVIDERS: dict[str, dict[str, str]] = {
+    "openai": {
+        "model_id": "openai/gpt-4o-mini",
+        "key_env": "OPENAI_API_KEY",
+        "key_hint": (
+            "Get one at https://platform.openai.com/api-keys — the API is "
+            "billed separately from a ChatGPT subscription."
+        ),
+    },
+    "gemini": {
+        "model_id": "gemini/gemini-3.5-flash-lite",
+        "key_env": "GEMINI_API_KEY",
+        "key_hint": (
+            "Get a free key at Google AI Studio "
+            "(https://aistudio.google.com) — no credit card needed."
+        ),
+    },
+}
+
 
 def redact_pii(text: str) -> str:
     """Mask member IDs and the mock members' names in log output."""
@@ -105,23 +135,44 @@ def load_dotenv(env_path: Path | None = None) -> None:
             os.environ[key] = value
 
 
-def require_openai_key() -> str:
-    """Return OPENAI_API_KEY, or fail loudly if it is missing.
+def require_provider_key(provider: str = "openai") -> str:
+    """Return the API key for a provider, or fail loudly if missing.
 
     The real agent path never falls back to the mock model — if there is
     no key, this raises with instructions instead of silently pretending
     to be a live agent.
     """
+    if provider not in PROVIDERS:
+        raise ValueError(
+            f"Unknown provider {provider!r}. Choose one of: "
+            + ", ".join(sorted(PROVIDERS))
+        )
     load_dotenv()
-    key = os.environ.get("OPENAI_API_KEY", "").strip()
+    key_env = PROVIDERS[provider]["key_env"]
+    key = os.environ.get(key_env, "").strip()
     if not key:
         raise RuntimeError(
-            "OPENAI_API_KEY is not set. The agent runs against real OpenAI "
-            "by default — set the key in your environment, or copy "
-            ".env.example to .env and put the key there (never commit .env). "
-            "For the offline demo only, run with --mock."
+            f"{key_env} is not set. The agent runs against real "
+            f"{provider} by default — set the key in your environment, or "
+            f"copy .env.example to .env and put the key there (never commit "
+            f".env). {PROVIDERS[provider]['key_hint']} For the offline demo "
+            f"only, run with --mock."
         )
     return key
+
+
+def require_openai_key() -> str:
+    """Return OPENAI_API_KEY, or fail loudly if it is missing.
+
+    Kept for backwards compatibility — new code should use
+    :func:`require_provider_key`.
+    """
+    return require_provider_key("openai")
+
+
+def require_gemini_key() -> str:
+    """Return GEMINI_API_KEY, or fail loudly if it is missing."""
+    return require_provider_key("gemini")
 
 
 def create_mcp_client() -> MCPClient:
@@ -158,14 +209,19 @@ def print_tool_list(tools: list[tuple[str, str]]) -> None:
 
 @contextmanager
 def eligibility_agent(
-    model: Any | None = None, callback_handler: Any | None = None
+    model: Any | None = None,
+    provider: str = "openai",
+    callback_handler: Any | None = None,
 ) -> Iterator[Agent]:
     """Start the MCP server, load its tools, and yield a ready agent.
 
-    With no ``model`` given, the agent runs against real OpenAI
-    (LiteLLM ``openai/gpt-4o-mini``) and requires OPENAI_API_KEY — see
-    :func:`require_openai_key`. Pass a model explicitly only for the
-    scripted model in tests and the offline demo; the real path never
+    With no ``model`` given, the agent runs against a real model through
+    LiteLLM and requires that provider's key — see
+    :func:`require_provider_key`. ``provider="openai"`` (the default)
+    uses ``openai/gpt-4o-mini`` and needs OPENAI_API_KEY;
+    ``provider="gemini"`` uses ``gemini/gemini-3.5-flash-lite`` on the
+    free tier and needs GEMINI_API_KEY. Pass a model explicitly only for
+    the scripted model in tests and the offline demo; the real path never
     silently falls back to mock.
 
     The MCP client is owned by the Strands Agent: constructing the agent
@@ -175,8 +231,8 @@ def eligibility_agent(
     logging.getLogger("strands").addFilter(_RedactPIIFilter())
     client = create_mcp_client()
     if model is None:
-        require_openai_key()
-        agent_model: Any = LiteLLMModel(model_id="openai/gpt-4o-mini")
+        require_provider_key(provider)
+        agent_model: Any = LiteLLMModel(model_id=PROVIDERS[provider]["model_id"])
     else:
         agent_model = model
     agent = Agent(
@@ -199,6 +255,7 @@ def build_scripted_agent() -> Any:
 
 __all__ = [
     "EXPECTED_TOOLS",
+    "PROVIDERS",
     "SYSTEM_PROMPT",
     "ScriptedModel",
     "create_mcp_client",
@@ -207,5 +264,7 @@ __all__ = [
     "load_dotenv",
     "print_tool_list",
     "redact_pii",
+    "require_gemini_key",
     "require_openai_key",
+    "require_provider_key",
 ]

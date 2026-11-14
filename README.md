@@ -38,20 +38,23 @@ needs a human saying yes first. Member IDs are redacted from the logs.
 
 ```mermaid
 flowchart LR
-    U[You] --> A[Strands agent\nLiteLLM openai/gpt-4o-mini]
+    U[You] --> A[Strands agent\nLiteLLM: OpenAI or Gemini]
     A -->|stdio| M[MCP server\n4 deterministic tools]
     M --> L[logic.py\ncoverage + cost math]
     M --> D[(mock payer data\nmembers.json, claims.json)]
     A -->|explains| U
 ```
 
-The agent is a single Strands agent running against a real model —
-LiteLLM with `openai/gpt-4o-mini` — by default. The tools live in a
-separate MCP server process (`agent_eligibility_claims.mcp_server`),
-which the agent connects to over stdio when it starts up. The model
-never touches the payer data directly — it can only call the tools, and
-the tools do the deciding. The scripted model is only for the tests and
-the offline demo (`make demo-mock`); the real path never falls back to it.
+The agent is a single Strands agent running against a real model.
+LiteLLM with `openai/gpt-4o-mini` is the default; pass
+`--provider gemini` to run it on the Gemini free tier instead
+(`gemini/gemini-3.5-flash-lite`, no card needed — see below). The tools
+live in a separate MCP server process
+(`agent_eligibility_claims.mcp_server`), which the agent connects to
+over stdio when it starts up. The model never touches the payer data
+directly — it can only call the tools, and the tools do the deciding.
+The scripted model is only for the tests and the offline demo
+(`make demo-mock`); the real path never falls back to it.
 
 When the agent starts, it prints the tools it loaded, so you can see
 exactly what it is allowed to call before it takes any request:
@@ -79,6 +82,32 @@ your environment or in a `.env` file in the repo root. No key, no silent
 fallback: the demo stops with a clear message telling you to set one.
 Never commit a real key: `.env` is gitignored, and `.env.example` is the
 only key-shaped file in the repo.
+
+## Running it free on Gemini
+
+Don't want to pay OpenAI for the demo? Run the same agent on Google's
+free tier instead:
+
+```bash
+make demo-gemini   # or: python -m agent_eligibility_claims.demo --provider gemini
+```
+
+It needs `GEMINI_API_KEY` — get a free key at Google AI Studio
+(https://aistudio.google.com), no credit card and no billing account.
+The model is `gemini-3.5-flash-lite`, picked for the free tier on
+purpose: it is stable and new projects can use it, and its free daily
+quota (about 500 requests/day as shown in AI Studio) is far higher than
+plain Flash (about 20/day) — the demo makes several calls per run, so
+Flash would run out after a couple of runs. It is also the model
+`gemini-2.5-flash` routes to after that ID stops serving new users on
+December 1, 2026, so it will not disappear under you next month.
+
+Two things to know about the free tier: the limits are per project, not
+per key, and Google says free-tier content may be used to improve its
+products. Model names rotate fast — if the ID ever stops working,
+check Google's Gemini API pricing page for the current free-tier
+Flash-Lite model and swap the one line in `agent.py`
+(`PROVIDERS["gemini"]["model_id"]`).
 
 It walks through six scenarios against the mock data. The model words
 things its own way, so your output won't match this word for word — but
@@ -171,7 +200,8 @@ The scripted model is a stand-in, not the agent: it reads the request,
 makes the one tool call the request needs, and summarizes the tool
 result. It exists so the orchestration (which tool, in what order, what
 happens on a repeat submit) is testable without spending anything. The
-real agent — the thing `make demo` runs — is always OpenAI.
+real agent — the thing `make demo` and `make demo-gemini` run — is
+always a real model, OpenAI or Gemini.
 
 ## Running the tests
 
@@ -179,7 +209,7 @@ real agent — the thing `make demo` runs — is always OpenAI.
 make test   # or: .venv/bin/python -m pytest -v
 ```
 
-32 tests, no key needed (33 collected; the live one skips without a key):
+41 tests, no key needed (43 collected; the two live ones skip without a key):
 
 - `tests/test_logic.py` — the deterministic logic directly: eligibility
   verdicts, claim statuses, the cost math, idempotency, the confirmation
@@ -190,13 +220,16 @@ make test   # or: .venv/bin/python -m pytest -v
 - `tests/test_orchestration.py` — the full agent with the scripted model:
   the five demo scenarios end to end, including submitting the same claim
   twice.
-- `tests/test_agent_factory.py` — the default agent demands a key and
-  fails clearly without one; `.env` loading; the scripted model needs
-  no key.
+- `tests/test_agent_factory.py` — the default agent demands its
+  provider's key and fails clearly without one; the Gemini path builds
+  `gemini/gemini-3.5-flash-lite` and a Gemini key does not unlock the
+  OpenAI path; `.env` loading; the scripted model needs no key.
 - `tests/test_demo_cli.py` — `demo` without a key fails with a clear
-  message; `demo --mock` runs the whole demo offline.
-- `tests/test_live.py` — one smoke test against OpenAI. It only runs when
-  `OPENAI_API_KEY` is set and skips otherwise.
+  message; `demo --provider gemini` and `demo --gemini` fail clearly
+  without a Gemini key; `demo --mock` runs the whole demo offline.
+- `tests/test_live.py` — one smoke test per provider. The OpenAI one
+  only runs when `OPENAI_API_KEY` is set; the Gemini one only runs when
+  `GEMINI_API_KEY` is set. Both skip otherwise.
 
 ## Layout
 
