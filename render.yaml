@@ -1,0 +1,23 @@
+# Render Blueprint — free tier. Deploys the eligibility-claims web
+# UI (web/) as a web service, straight from this repo. The agent runs
+# on the scripted mock model by default: deterministic, no API key,
+# no network calls, no database — so there is nothing to configure
+# in the dashboard. (Optional: set GEMINI_API_KEY in the dashboard
+# to run the agent live on the Gemini free tier; the UI falls back
+# to the scripted model if a live call fails.)
+#
+# Free-tier notes: the instance spins down after 15 minutes idle and
+# takes ~1 minute to wake on the next visit. The claim ledger lives
+# in the MCP server's memory, so a restart resets it to the seed
+# claims — fine for a demo.
+services:
+  - type: web
+    name: agent-eligibility-claims
+    env: python
+    plan: free
+    buildCommand: pip install -r web/requirements.txt
+    startCommand: uvicorn web.app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0

@@ -83,6 +83,26 @@ fallback: the demo stops with a clear message telling you to set one.
 Never commit a real key: `.env` is gitignored, and `.env.example` is the
 only key-shaped file in the repo.
 
+## Web UI (run it locally)
+
+The same agent, in your browser: ask a coverage, claim-status, or
+cost question and watch it call the four MCP tools — every tool
+call is shown with its inputs and result. Runs on your own machine:
+
+```bash
+pip install -r web/requirements.txt
+uvicorn web.app:app --reload        # http://127.0.0.1:8000
+# or simply: make web
+```
+
+Mock mode by default (the scripted model — deterministic, no key,
+no network). Set `GEMINI_API_KEY` in your environment to run the
+agent live on the Gemini free tier instead; the page shows which
+mode answered. Claim submission still asks for an explicit
+confirmation in the UI before anything is submitted, and the same
+idempotency key twice returns the original claim. Details:
+[`web/README.md`](web/README.md).
+
 ## Running it free on Gemini
 
 Don't want to pay OpenAI for the demo? Run the same agent on Google's

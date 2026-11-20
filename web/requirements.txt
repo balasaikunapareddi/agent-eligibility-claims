@@ -1,0 +1,13 @@
+# The eligibility-claims web UI. The agent itself needs strands-agents
+# (agent loop + scripted mock model), mcp (the tool server over stdio),
+# and litellm (only exercised in live mode, when GEMINI_API_KEY is set);
+# the UI adds FastAPI. Mock mode needs no key and no network.
+fastapi
+uvicorn
+python-multipart  # chat form posts
+strands-agents>=1.0
+litellm>=1.0
+mcp>=2.0
+
+# Test-only (FastAPI's TestClient needs httpx):
+#   pip install httpx pytest

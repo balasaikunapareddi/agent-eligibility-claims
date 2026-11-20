@@ -1,4 +1,4 @@
-.PHONY: install test demo demo-gemini demo-mock demo-live server
+.PHONY: install test demo demo-gemini demo-mock demo-live server web
 
 install:
 	python3 -m venv .venv || true
@@ -26,3 +26,7 @@ demo-live:
 
 server:
 	.venv/bin/python -m agent_eligibility_claims.mcp_server
+
+# Chat UI in the browser (scripted mock by default; set GEMINI_API_KEY for live).
+web:
+	.venv/bin/uvicorn web.app:app --reload
