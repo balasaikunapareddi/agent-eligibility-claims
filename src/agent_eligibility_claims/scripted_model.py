@@ -197,7 +197,7 @@ class ScriptedModel(Model):
             }
         if claim and ("status" in lowered or "claim" in lowered):
             return "check_claim_status", {"claim_id": claim.group(0).upper()}
-        if ("cost" in lowered or "estimate" in lowered) and member and procedure:
+        if ("cost" in lowered or "estimate" in lowered or "pay" in lowered) and member and procedure:
             return "estimate_patient_cost", {
                 "member_id": member.group(0).upper(),
                 "procedure_code": procedure.group(1),
@@ -205,7 +205,7 @@ class ScriptedModel(Model):
                 if billed
                 else 0.0,
             }
-        if "eligib" in lowered and member and procedure:
+        if ("eligib" in lowered or "cover" in lowered) and member and procedure:
             return "verify_eligibility", {
                 "member_id": member.group(0).upper(),
                 "procedure_code": procedure.group(1),
