@@ -21,3 +21,10 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.0
+      # The MCP server runs as a subprocess (`python -m
+      # agent_eligibility_claims.mcp_server`); the package is not
+      # pip-installed on Render, so the subprocess needs src/ on
+      # PYTHONPATH to find it. Without this the chat fails with
+      # "Failed to start MCP client".
+      - key: PYTHONPATH
+        value: src
