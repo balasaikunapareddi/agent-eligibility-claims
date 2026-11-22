@@ -6,7 +6,8 @@ import uuid
 import pytest
 from strands import Agent
 
-from agent_eligibility_claims.agent import EXPECTED_TOOLS, SYSTEM_PROMPT, list_loaded_tools
+from agent_eligibility_claims.agent import EXPECTED_TOOLS, list_loaded_tools
+from agent_eligibility_claims.prompts import SYSTEM_PROMPT
 from agent_eligibility_claims.scripted_model import ScriptedModel
 from conftest import result_text
 

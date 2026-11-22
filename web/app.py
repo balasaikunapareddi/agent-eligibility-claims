@@ -42,10 +42,10 @@ from fastapi.responses import HTMLResponse  # noqa: E402
 
 from agent_eligibility_claims import logic  # noqa: E402
 from agent_eligibility_claims.agent import (  # noqa: E402
-    SYSTEM_PROMPT,
     eligibility_agent,
     load_dotenv,
 )
+from agent_eligibility_claims.prompts import SYSTEM_PROMPT  # noqa: E402
 from agent_eligibility_claims.demo import result_text  # noqa: E402
 from agent_eligibility_claims.scripted_model import ScriptedModel  # noqa: E402
 

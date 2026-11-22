@@ -35,26 +35,10 @@ from strands import Agent
 from strands.models.litellm import LiteLLMModel
 from strands.tools.mcp import MCPClient
 
+from .prompts import SYSTEM_PROMPT
 from .scripted_model import ScriptedModel
 
 logger = logging.getLogger(__name__)
-
-SYSTEM_PROMPT = """You are a healthcare eligibility and claims assistant. You help
-front-desk staff and patients understand coverage, claim status, and costs.
-
-Rules you must follow:
-- Use your tools to look things up. Never guess at coverage, a claim
-  status, or a cost — call the tool and report what it returns.
-- You explain results. You never approve payment, never decide a claim
-  outcome, and never change coverage. Those decisions belong to the payer
-  and the tools.
-- Before calling submit_claim, ask the user to confirm the member,
-  procedure, and billed amount, and only call it with confirmed=true after
-  they say yes. If they have not confirmed, do not submit.
-- Member IDs and dates of birth are sensitive. Do not paste them into logs
-  or repeat them unless the user asked for them.
-- All data is synthetic mock data for demonstration. Say so if asked.
-"""
 
 EXPECTED_TOOLS = [
     "verify_eligibility",
@@ -248,6 +232,68 @@ def eligibility_agent(
         client.stop(None, None, None)
 
 
+class EligibilityAgent:
+    """The eligibility & claims agent, as one visible class.
+
+    What it is: a Strands ``Agent`` (real model via LiteLLM — OpenAI
+    ``gpt-4o-mini`` by default, Gemini free tier with
+    ``provider="gemini"``) wired to the eligibility-claims MCP server
+    over stdio. Its instructions are ``prompts.SYSTEM_PROMPT``; its
+    tools are the four MCP tools in ``EXPECTED_TOOLS``
+    (verify_eligibility, check_claim_status, estimate_patient_cost,
+    submit_claim). The agent holds no healthcare logic — every
+    decision is made by those deterministic tools.
+
+    Usage — the MCP server subprocess lives for the ``with`` block::
+
+        with EligibilityAgent(provider="gemini") as agent:
+            print(agent.run("Is MBR-1001 covered for 99213?"))
+
+    ``model`` is for the scripted model in tests and the offline demo
+    only; with no model given, construction requires the provider's
+    API key (see :func:`require_provider_key`) and never falls back
+    to mock. This class is a thin, explicit wrapper over the
+    :func:`eligibility_agent` context manager, which remains the
+    factory used by the demo, the tests, and the web UI.
+    """
+
+    def __init__(
+        self,
+        model: Any | None = None,
+        provider: str = "openai",
+        callback_handler: Any | None = None,
+    ) -> None:
+        self.model = model
+        self.provider = provider
+        self.callback_handler = callback_handler
+        self._ctx: Any | None = None
+        self._agent: Agent | None = None
+
+    def __enter__(self) -> "EligibilityAgent":
+        self._ctx = eligibility_agent(
+            model=self.model,
+            provider=self.provider,
+            callback_handler=self.callback_handler,
+        )
+        self._agent = self._ctx.__enter__()
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        if self._ctx is not None:
+            self._ctx.__exit__(*exc)
+            self._ctx = None
+            self._agent = None
+
+    def run(self, prompt: str) -> Any:
+        """One agent turn: send ``prompt``, return the Strands result."""
+        if self._agent is None:
+            raise RuntimeError(
+                "EligibilityAgent is not started — use it as a context "
+                "manager: `with EligibilityAgent(...) as agent:`."
+            )
+        return self._agent(prompt)
+
+
 def build_scripted_agent() -> Any:
     """Convenience helper for tests and the offline demo: agent on the mock model."""
     return eligibility_agent(model=ScriptedModel())
@@ -257,6 +303,7 @@ __all__ = [
     "EXPECTED_TOOLS",
     "PROVIDERS",
     "SYSTEM_PROMPT",
+    "EligibilityAgent",
     "ScriptedModel",
     "create_mcp_client",
     "eligibility_agent",

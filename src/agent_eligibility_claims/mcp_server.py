@@ -19,18 +19,14 @@ import logging
 from mcp.server.mcpserver import MCPServer
 
 from . import logic
+from .prompts import MCP_SERVER_INSTRUCTIONS
 
 logger = logging.getLogger(__name__)
 
 server = MCPServer(
     name="eligibility-claims",
     description="Deterministic healthcare eligibility and claims tools (mock payer data).",
-    instructions=(
-        "Tools for checking member eligibility, looking up claim status, "
-        "estimating patient cost, and submitting claims. All data is synthetic "
-        "mock data. Claim submission is idempotent and requires explicit user "
-        "confirmation."
-    ),
+    instructions=MCP_SERVER_INSTRUCTIONS,
 )
 
 

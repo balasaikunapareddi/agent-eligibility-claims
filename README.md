@@ -255,7 +255,8 @@ make test   # or: .venv/bin/python -m pytest -v
 
 ```
 src/agent_eligibility_claims/
-  agent.py            Strands agent, system prompt, MCP client, tool listing
+  prompts.py          all system prompts, as named constants (inspectable)
+  agent.py            EligibilityAgent (Strands), MCP client, tool listing
   mcp_server.py       the MCP server (the four tools)
   logic.py            the deterministic rules — no model, no network
   scripted_model.py   rule-based stand-in model for tests and the offline demo
